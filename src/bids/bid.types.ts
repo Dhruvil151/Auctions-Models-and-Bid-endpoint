@@ -8,5 +8,5 @@ export interface Auction {
   version: number; pending_decision: Decision | null; created_at: Date;
 }
 export interface BidRequest extends BidInput {
-  id: string; idempotency_key: string; outcome: Outcome | null; created_at: Date;
+  id: string; idempotency_key: string; outcome: Outcome | null; created_at: Date; completed_at?: Date;
 }
