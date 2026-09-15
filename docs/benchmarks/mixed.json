@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-09-15T08:28:36.590Z",
+  "node": "v24.19.0",
+  "cpu": "AMD Ryzen 7 250 w/ Radeon 780M Graphics        ",
+  "logicalCpus": 16,
+  "hostMemoryGiB": 31,
+  "database": "Local Docker, one replica, hard durability, majority reads/writes",
+  "requests": 2000,
+  "concurrency": 1000,
+  "auctions": 1,
+  "instances": 2,
+  "mode": "mixed",
+  "durationMs": 17192,
+  "responsesPerSecond": 116,
+  "businessDecisionsPerSecond": 116,
+  "latencyMs": {
+    "p50": 7803,
+    "p95": 9169,
+    "p99": 9517
+  },
+  "statuses": {
+    "201": 46,
+    "409": 1954
+  },
+  "acceptedLedgerEntries": 46,
+  "invariantsPassed": true
+}

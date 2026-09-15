@@ -5,8 +5,8 @@
 - [x] Stage 3: Implement bidding, idempotency and recovery protocol.
 - [x] Stage 4: Add and run business-rule, concurrency and recovery tests.
 - [x] Stage 5: Add load tests and record available measurements.
-- [ ] Stage 6: Complete documentation and final verification.
-- [ ] Push completed stage commits to the user's remote.
+- [x] Stage 6: Complete documentation and final verification.
+- [x] Push completed stage commits to the user's remote.
 
 ## Environment notes
 - Node.js 24 and Git are available.
@@ -16,3 +16,5 @@
 - Stage 3: TypeScript check and build pass; a real-database bid was accepted and durably recorded.
 - Stage 4: 32 tests passed against the real database, including two API instances, 100 simultaneous equal bids, 100 duplicate requests, exact close boundaries, and crash recovery.
 - Stage 5: Added multi-process HTTP load tests, bounded connection timeouts/reconnection, and optimized safe low-bid rejections. All three 2,000-request workloads completed with zero 503 responses. Results are in docs/LOAD_RESULTS.md. Expanded regression suite: 36 passing tests.
+- Stage 6: README covers all required design decisions, startup, API examples, recovery, tests, and production limitations. Final suite: 39 passing tests. Type checking, compilation, Docker startup, database restart/replay, and the recovery command verified. Final load runs: 6,000 requests across three workloads, no temporary failures, all invariants passed.
+- All stage commits are pushed to the public repository. Working tree checked before handoff.

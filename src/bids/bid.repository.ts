@@ -13,9 +13,16 @@ export class BidRepository {
 
   async register(input: BidInput, key: string): Promise<BidRequest> {
     const id = requestId(input.auction_id, key);
+    // Bind a missing-auction result when the request is first created. If an
+    // auction is provisioned concurrently, every copy still uses the outcome
+    // of the same winning request-registration write.
+    const exists = await this.getAuction(input.auction_id);
+    const initialOutcome = exists ? null : {
+      statusCode: 404, body: { code: 'AUCTION_NOT_FOUND', message: 'Auction does not exist.' },
+    };
     assertWrite(await this.db.run(this.db.table('bid_requests').get(id).replace((existing: r.Row) =>
       r.branch(existing.eq(null), r.expr({
-        id, ...input, idempotency_key: key, outcome: null, created_at: r.now(),
+        id, ...input, idempotency_key: key, outcome: initialOutcome, created_at: r.now(),
       }), existing), { durability: 'hard' })));
     return this.checkedRequest(id, input, key);
   }

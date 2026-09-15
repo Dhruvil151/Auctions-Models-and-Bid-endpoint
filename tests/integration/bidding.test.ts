@@ -7,6 +7,7 @@ import { BidRepository, requestId } from '../../src/bids/bid.repository.js';
 import { BidService, type FaultHooks } from '../../src/bids/bid.service.js';
 import { buildApp } from '../../src/app.js';
 import type { Auction, BidInput, BidRequest } from '../../src/bids/bid.types.js';
+import { recoverPending } from '../../src/recovery/pending-decisions.js';
 
 const db = new Database(`auction_test_${randomUUID().replaceAll('-', '')}`);
 const otherDb = new Database(db.name);
@@ -62,6 +63,9 @@ describe('business rules and HTTP contract', () => {
     const first = await post(body, key);
     expect(first.statusCode).toBe(404);
     expect((await post(body, key)).body).toBe(first.body);
+    await auction({ id: body.auction_id });
+    expect((await post(body, key)).body).toBe(first.body);
+    expect((await post(body)).statusCode).toBe(201);
   });
 
   it('replays acceptance after outbidding and closure; persists rejections', async () => {
@@ -178,6 +182,50 @@ describe('real database concurrency across independent connections and API insta
 });
 
 describe('crash recovery and stale actors', () => {
+  it('recovers idle auctions through the indexed recovery sweep in bounded batches', async () => {
+    const ids = await Promise.all([auction(), auction()]);
+    for (const id of ids) {
+      const request = await repository.register(input(id), randomUUID());
+      await repository.decide(input(id), request.id, 0);
+    }
+    expect(await recoverPending(otherService, 1)).toBeGreaterThanOrEqual(2);
+    for (const id of ids) expect((await repository.getAuction(id))?.pending_decision).toBeNull();
+    expect(await recoverPending(otherService)).toBe(0);
+  });
+  it('returns 503 at the HTTP deadline and resolves a committed decision on retry', async () => {
+    const id = await auction(); const key = randomUUID();
+    let release!: () => void;
+    const resume = new Promise<void>((resolve) => { release = resolve; });
+    const slowApp = buildApp(new BidService(repository, { afterDecision: () => resume }), { logger: false, timeoutMs: 100 });
+    try {
+      const response = await post(input(id), key, slowApp);
+      expect(response.statusCode).toBe(503);
+      release();
+      expect((await post(input(id), key)).statusCode).toBe(201);
+      expect((await repository.getAuction(id))?.version).toBe(1);
+    } finally { release(); await slowApp.close(); }
+  });
+  it('uses the winning registration when an auction is created during a duplicate request', async () => {
+    const id = randomUUID(); const key = randomUUID();
+    let release!: () => void; let reached!: () => void;
+    const paused = new Promise<void>((resolve) => { reached = resolve; });
+    const resume = new Promise<void>((resolve) => { release = resolve; });
+    class PausedExistenceRepository extends BidRepository {
+      override async getAuction(auctionId: string) {
+        const snapshot = await super.getAuction(auctionId);
+        if (!snapshot) { reached(); await resume; }
+        return snapshot;
+      }
+    }
+    const delayed = new BidService(new PausedExistenceRepository(db)).bid(input(id), key, deadline());
+    await paused;
+    await auction({ id });
+    const accepted = await otherService.bid(input(id), key, deadline());
+    release();
+    expect(await delayed).toEqual(accepted);
+    expect(accepted.statusCode).toBe(201);
+    expect((await repository.getAuction(id))?.version).toBe(1);
+  });
   it('replays competing low-bid rejections even when their observed auction versions differ', async () => {
     const id = await auction(); const key = randomUUID();
     await service.bid(input(id, 200), randomUUID(), deadline());

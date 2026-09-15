@@ -34,9 +34,9 @@ export class BidService {
       // a delayed duplicate whose outcome is completed by a different process.
       const auction = await this.repository.getAuction(input.auction_id);
       if (!auction) {
-        const outcome = { statusCode: 404, body: { code: 'AUCTION_NOT_FOUND', message: 'Auction does not exist.' } };
-        await this.repository.saveOutcome(request.id, outcome);
-        return (await this.repository.getRequest(request.id))!.outcome!;
+        // Missing auctions are handled at registration. Deleting a live auction
+        // is unsupported; never overwrite a possibly committed bid with a 404.
+        throw unavailable();
       }
       if (auction.pending_decision) {
         await this.finalize(auction.id, auction.pending_decision);
