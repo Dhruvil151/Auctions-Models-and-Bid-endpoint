@@ -1,0 +1,34 @@
+services:
+  db:
+    image: rethinkdb:2.4
+    command: rethinkdb --bind all
+    ports:
+      - "127.0.0.1:28015:28015"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - auction-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/28015'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  init:
+    build: .
+    command: node dist/scripts/initialize.js
+    environment:
+      DB_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DB_HOST: db
+      HOST: 0.0.0.0
+    depends_on:
+      init:
+        condition: service_completed_successfully
+volumes:
+  auction-data:

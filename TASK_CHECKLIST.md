@@ -1,7 +1,7 @@
 # Task checklist
 
 - [x] Stage 1: Initialize Git and record implementation plan.
-- [ ] Stage 2: Scaffold application, database setup and sample data.
+- [x] Stage 2: Scaffold application, database setup and sample data.
 - [ ] Stage 3: Implement bidding, idempotency and recovery protocol.
 - [ ] Stage 4: Add and run business-rule, concurrency and recovery tests.
 - [ ] Stage 5: Add load tests and record available measurements.
@@ -11,4 +11,5 @@
 ## Environment notes
 - Node.js 24 and Git are available.
 - Docker CLI is installed; initial check found no running Docker engine.
-- No Git remote is configured; repository URL requested from user.
+- Public remote created: https://github.com/Dhruvil151/Auctions-Models-and-Bid-endpoint
+- Stage 1 pushed. Docker Desktop started successfully; dependency setup in progress.
