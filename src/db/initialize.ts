@@ -10,11 +10,11 @@ export async function initialize(db: Database): Promise<void> {
   }
   const requests = db.table('bid_requests');
   if (!(await db.run(requests.indexList())).includes('auction_version')) {
-    await db.run(requests.indexCreate('auction_version', (row: r.RDatum) => [row('auction_id'), row('outcome')('body')('auction_version').default(0)]));
+    await db.run(requests.indexCreate('auction_version', (row: r.Row) => [row('auction_id'), row('outcome')('body')('auction_version').default(0)]));
   }
   const auctions = db.table('auctions');
   if (!(await db.run(auctions.indexList())).includes('has_pending')) {
-    await db.run(auctions.indexCreate('has_pending', (row: r.RDatum) => row('pending_decision').ne(null)));
+    await db.run(auctions.indexCreate('has_pending', (row: r.Row) => r.branch(row('pending_decision').ne(null), r.expr(1), r.expr(0))));
   }
   await db.run(requests.indexWait());
   await db.run(auctions.indexWait());

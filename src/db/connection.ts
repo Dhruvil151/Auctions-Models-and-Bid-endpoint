@@ -1,4 +1,5 @@
 import r from 'rethinkdb';
+import './driver-types.js';
 import { config } from '../config.js';
 
 /** Driver connections multiplex queries; a small pool avoids a socket per request. */
