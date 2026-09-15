@@ -15,6 +15,7 @@ export const config = {
   dbUser: process.env.DB_USER ?? 'admin',
   dbPassword: process.env.DB_PASSWORD ?? '',
   dbConnections: positiveInteger('DB_CONNECTIONS', 4),
+  dbQueryTimeoutMs: positiveInteger('DB_QUERY_TIMEOUT_MS', 5000),
   bidTimeoutMs: positiveInteger('BID_TIMEOUT_MS', 15_000),
   maxActiveBids: positiveInteger('MAX_ACTIVE_BIDS', 64),
   maxQueuedBids: positiveInteger('MAX_QUEUED_BIDS', 2048),

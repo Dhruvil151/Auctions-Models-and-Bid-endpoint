@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { Admission } from '../../src/shared/admission.js';
 
 describe('bounded admission', () => {
+  it('serializes one auction while letting another progress', async () => {
+    const admission = new Admission(2, 10);
+    let release!: () => void; let secondRan = false;
+    const first = admission.run(performance.now() + 1000, () => new Promise<void>((resolve) => { release = resolve; }), 'hot');
+    const second = admission.run(performance.now() + 1000, async () => { secondRan = true; }, 'hot');
+    expect(await admission.run(performance.now() + 1000, async () => 'independent', 'cold')).toBe('independent');
+    expect(secondRan).toBe(false);
+    release(); await first; await second;
+    expect(secondRan).toBe(true);
+  });
   it('queues work, rejects overflow and releases a permit after failure', async () => {
     const admission = new Admission(1, 1);
     let release!: () => void;

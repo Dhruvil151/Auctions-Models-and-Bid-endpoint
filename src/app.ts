@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { config } from './config.js';
 import { BidService } from './bids/bid.service.js';
 import type { BidInput } from './bids/bid.types.js';
-import { ApiError } from './shared/errors.js';
+import { ApiError, unavailable } from './shared/errors.js';
 import { Admission } from './shared/admission.js';
 
 export function buildApp(service: BidService, options: { logger?: boolean; timeoutMs?: number; maxActive?: number; maxQueued?: number } = {}) {
@@ -43,8 +43,19 @@ export function buildApp(service: BidService, options: { logger?: boolean; timeo
     },
   }, async (request, reply) => {
     const deadline = performance.now() + (options.timeoutMs ?? config.bidTimeoutMs);
-    const outcome = await admission.run(deadline, () => service.bid(request.body, request.headers['idempotency-key'], deadline));
-    return reply.code(outcome.statusCode).send(outcome.body);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(unavailable()), Math.max(1, deadline - performance.now()));
+    });
+    try {
+      // A response deadline does not cancel a possibly committed write. The
+      // admission permit stays held until that workflow actually finishes.
+      const outcome = await Promise.race([
+        admission.run(deadline, () => service.bid(request.body, request.headers['idempotency-key'], deadline)),
+        timeout,
+      ]);
+      return reply.code(outcome.statusCode).send(outcome.body);
+    } finally { clearTimeout(timer); }
   });
   return app;
 }

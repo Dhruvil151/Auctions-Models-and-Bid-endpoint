@@ -15,7 +15,10 @@ Auctions contain configuration, one top bid, a version, and at most one pending 
 
 Register a deterministic request ID, resolve any pending auction decision, reread the request, then atomically compare the auction version and empty pending slot. Store the decision and update the top together. Persist the outcome to the request ledger before conditionally clearing the pending slot. Helpers can complete the same steps after a crash. Version comparison fences stale actors, including delayed duplicate requests.
 
-Use hard durability, majority write acknowledgement, and majority reads. Do not assume cross-document transactions. Bound retries and database concurrency; independent auctions share no application lock.
+Use hard durability, majority write acknowledgement, and majority reads. Do not assume cross-document transactions. Bound retries and database concurrency; independent auctions share no correctness lock.
+
+## Measured refinement during implementation
+Load testing showed contention from writing every rejected bid to the auction. The final implementation can durably reject a bid below the confirmed top directly in its request record: the top never decreases, so that rejection remains valid. It reads the auction before rereading the request outcome to fence delayed duplicates. Concurrent rejection writers replay the first stored outcome. Such rejections report the observed auction version without incrementing it. Potentially winning bids still use the atomic decision protocol. Local scheduling serializes only decision-write attempts for a given auction; stable low-bid rejections run concurrently.
 
 ## Stages
 1. Initialize repository and record plan/checklist.

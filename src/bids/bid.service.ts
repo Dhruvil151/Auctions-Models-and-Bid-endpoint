@@ -2,6 +2,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { BidInput, Decision, Outcome } from './bid.types.js';
 import { BidRepository } from './bid.repository.js';
 import { unavailable } from '../shared/errors.js';
+import { Admission } from '../shared/admission.js';
+import { config } from '../config.js';
 
 export interface FaultHooks {
   afterRegistration?: () => Promise<void>;
@@ -12,6 +14,7 @@ export interface FaultHooks {
 }
 
 export class BidService {
+  private readonly decisions = new Admission(config.maxActiveBids, config.maxQueuedBids);
   constructor(readonly repository: BidRepository, private readonly hooks: FaultHooks = {}) {}
 
   async finalize(auctionId: string, decision: Decision): Promise<void> {
@@ -40,9 +43,21 @@ export class BidService {
       } else {
         request = await this.repository.checkedRequest(request.id, input, key);
         if (request.outcome) return request.outcome;
+        // The top amount never decreases and opening_amount is immutable. A
+        // bid already too low cannot become valid, so its rejection need not
+        // write the hot auction document. The ordered reads above are essential:
+        // a duplicate of an accepted bid must see its completed ledger outcome.
+        const tooLow = auction.top_bid ? input.amount <= auction.top_bid.amount : input.amount < auction.opening_amount;
+        if (tooLow) {
+          const outcome: Outcome = { statusCode: 409, body: {
+            code: 'BID_TOO_LOW', message: 'Bid must meet the opening amount and exceed the current top bid.',
+            auction_id: auction.id, auction_version: auction.version,
+          } };
+          return this.repository.saveOutcome(request.id, outcome, true);
+        }
         await this.hooks.beforeDecision?.();
         if (performance.now() >= deadline) throw unavailable();
-        if (await this.repository.decide(input, request.id, auction.version)) {
+        if (await this.decisions.run(deadline, () => this.repository.decide(input, request.id, auction.version), auction.id)) {
           await this.hooks.afterDecision?.();
           const decided = await this.repository.getAuction(auction.id);
           if (decided?.pending_decision?.request_id === request.id) {

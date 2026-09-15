@@ -126,6 +126,15 @@ describe('business rules and HTTP contract', () => {
 });
 
 describe('real database concurrency across independent connections and API instances', () => {
+  it('preserves atomicity without any local scheduler under 30 competing database writes', async () => {
+    const id = await auction();
+    const requests = await Promise.all(Array.from({ length: 30 }, (_, i) => repository.register(input(id, 100, `user-${i}`), randomUUID())));
+    const decisions = await Promise.all(requests.map((request, i) =>
+      (i % 2 ? repository : otherService.repository).decide(request, request.id, 0)));
+    expect(decisions.filter(Boolean)).toHaveLength(1);
+    expect((await repository.getAuction(id))?.top_bid?.amount).toBe(100);
+    await service.finalize(id, (await repository.getAuction(id))!.pending_decision!);
+  });
   it('accepts exactly one of 100 equal bids', async () => {
     const id = await auction();
     const responses = await Promise.all(Array.from({ length: 100 }, (_, i) => post(input(id, 100, `user-${i}`), randomUUID(), i % 2 ? app : otherApp)));
@@ -169,6 +178,37 @@ describe('real database concurrency across independent connections and API insta
 });
 
 describe('crash recovery and stale actors', () => {
+  it('replays competing low-bid rejections even when their observed auction versions differ', async () => {
+    const id = await auction(); const key = randomUUID();
+    await service.bid(input(id, 200), randomUUID(), deadline());
+    let release!: () => void; let reached!: () => void;
+    const paused = new Promise<void>((resolve) => { reached = resolve; });
+    const resume = new Promise<void>((resolve) => { release = resolve; });
+    class DelayedRejectionRepository extends BidRepository {
+      override async saveOutcome(...args: Parameters<BidRepository['saveOutcome']>) {
+        reached(); await resume;
+        return super.saveOutcome(...args);
+      }
+    }
+    const delayed = new BidService(new DelayedRejectionRepository(db)).bid(input(id, 100), key, deadline());
+    await paused;
+    await otherService.bid(input(id, 300), randomUUID(), deadline());
+    const winner = await otherService.bid(input(id, 100), key, deadline());
+    release();
+    expect(await delayed).toEqual(winner);
+    expect(winner.statusCode).toBe(409);
+  });
+  it('returns a retryable HTTP response for an unknown write outcome', async () => {
+    const id = await auction(); const key = randomUUID();
+    const failingApp = buildApp(new BidService(repository, { afterDecision: async () => { throw new Error('connection lost'); } }), { logger: false });
+    try {
+      const failed = await post(input(id), key, failingApp);
+      expect(failed.statusCode).toBe(503);
+      expect(failed.headers['retry-after']).toBe('1');
+      expect((await post(input(id), key)).statusCode).toBe(201);
+      expect((await repository.getAuction(id))?.version).toBe(1);
+    } finally { await failingApp.close(); }
+  });
   it.each(['afterRegistration', 'afterDecision', 'afterOutcome', 'afterClear'] as const)('recovers interruption at %s', async (point) => {
     const id = await auction(); const key = randomUUID(); const body = input(id);
     const hooks: FaultHooks = { [point]: async () => { throw new Error('Simulated process interruption'); } };
@@ -223,7 +263,7 @@ describe('crash recovery and stale actors', () => {
   it('keeps a pending decision when outcome persistence fails', async () => {
     const id = await auction(); const key = randomUUID(); const body = input(id);
     class BrokenRepository extends BidRepository {
-      override async saveOutcome(): Promise<void> { throw new Error('ledger unavailable'); }
+      override async saveOutcome(): Promise<never> { throw new Error('ledger unavailable'); }
     }
     await expect(new BidService(new BrokenRepository(db)).bid(body, key, deadline())).rejects.toThrow('ledger unavailable');
     expect((await repository.getAuction(id))?.pending_decision?.request_id).toBe(requestId(id, key));

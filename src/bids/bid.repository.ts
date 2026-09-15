@@ -47,7 +47,8 @@ export class BidRepository {
         statusCode: 409, body: { code, message, auction_id: input.auction_id, auction_version: next },
       });
       const accepted = r.expr({ statusCode: 201, body: {
-        bid_id: id, ...input, status: 'accepted', auction_version: next,
+        bid_id: id, auction_id: input.auction_id, user_id: input.user_id,
+        amount: input.amount, status: 'accepted', auction_version: next,
         accepted_at: now.toISO8601(),
       } });
       const tooLow = r.branch(auction('top_bid').eq(null),
@@ -72,20 +73,20 @@ export class BidRepository {
     return result.replaced === 1;
   }
 
-  async saveOutcome(id: string, outcome: Outcome): Promise<void> {
+  async saveOutcome(id: string, outcome: Outcome, replayExisting = false): Promise<Outcome> {
     const result = await this.db.run(this.db.table('bid_requests').get(id).update((request: r.Row) =>
       r.branch(request('outcome').eq(null), r.expr({ outcome, completed_at: r.now() }), r.expr({})),
     { durability: 'hard' }));
     assertWrite(result);
     if (result.skipped) throw new Error('Cannot record outcome: missing request');
     const saved = await this.getRequest(id);
-    if (!saved?.outcome || JSON.stringify(saved.outcome) !== JSON.stringify(outcome)) {
-      // Key ordering is normalized by the database for both persisted decision/outcome reads.
-      if (!saved?.outcome || saved.outcome.statusCode !== outcome.statusCode ||
-          Object.keys(outcome.body).some((key) => saved.outcome!.body[key] !== outcome.body[key])) {
-        throw new Error('Conflicting request outcomes');
-      }
+    if (!saved?.outcome) throw new Error('Request outcome missing after write');
+    if (!replayExisting && (saved.outcome.statusCode !== outcome.statusCode ||
+        Object.keys(saved.outcome.body).length !== Object.keys(outcome.body).length ||
+        Object.keys(outcome.body).some((key) => saved.outcome!.body[key] !== outcome.body[key]))) {
+      throw new Error('Conflicting request outcomes');
     }
+    return saved.outcome;
   }
 
   async clearDecision(auctionId: string, decision: Decision): Promise<void> {
